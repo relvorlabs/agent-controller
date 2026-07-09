@@ -1,0 +1,108 @@
+{
+  "version": 3,
+  "skills": {
+    "product-designer": {
+      "source": "borghei/claude-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/borghei/claude-skills.git",
+      "skillPath": "product-team/product-designer/SKILL.md",
+      "skillFolderHash": "3593623487938a2348bae1f64a14d0e3e93d083a",
+      "installedAt": "2026-04-27T01:46:37.968Z",
+      "updatedAt": "2026-04-27T01:46:37.968Z"
+    },
+    "grill-me": {
+      "source": "mattpocock/skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/mattpocock/skills.git",
+      "skillPath": "skills/productivity/grill-me/SKILL.md",
+      "skillFolderHash": "2a1ad17028306ebe45f0e49703fa28b9b2e7f499",
+      "pluginName": "mattpocock-skills",
+      "installedAt": "2026-05-01T20:54:11.348Z",
+      "updatedAt": "2026-05-01T21:04:10.531Z"
+    },
+    "startup-metrics-framework": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/wshobson/agents.git",
+      "skillPath": "plugins/startup-business-analyst/skills/startup-metrics-framework/SKILL.md",
+      "skillFolderHash": "98b1d0fbc345a4568e1fd2072f92fe17f88e4f43",
+      "installedAt": "2026-05-07T07:59:50.964Z",
+      "updatedAt": "2026-05-07T07:59:50.964Z"
+    },
+    "breakdown-plan": {
+      "source": "github/awesome-copilot",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/github/awesome-copilot.git",
+      "skillPath": "skills/breakdown-plan/SKILL.md",
+      "skillFolderHash": "46ab78a4abbe716aefa6e4adb158d160da809414",
+      "installedAt": "2026-05-07T14:47:07.103Z",
+      "updatedAt": "2026-05-07T14:47:07.103Z"
+    },
+    "using-superpowers": {
+      "source": "obra/superpowers",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/obra/superpowers.git",
+      "skillPath": "skills/using-superpowers/SKILL.md",
+      "skillFolderHash": "225dd70596c396940ff158335a954a64d93ece40",
+      "installedAt": "2026-05-17T23:15:19.711Z",
+      "updatedAt": "2026-05-17T23:15:19.711Z"
+    },
+    "gsap-core": {
+      "source": "greensock/gsap-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/greensock/gsap-skills.git",
+      "skillPath": "skills/gsap-core/SKILL.md",
+      "skillFolderHash": "135754edd728103e329a8df8b471b197375b370e",
+      "installedAt": "2026-05-24T17:29:56.760Z",
+      "updatedAt": "2026-05-24T17:29:56.760Z"
+    },
+    "shadcn": {
+      "source": "shadcn/ui",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/shadcn/ui.git",
+      "skillPath": "skills/shadcn/SKILL.md",
+      "skillFolderHash": "53547268e4c90c0dd7981e098e1ea4a89393575a",
+      "installedAt": "2026-06-19T14:25:03.204Z",
+      "updatedAt": "2026-06-19T14:25:03.204Z"
+    },
+    "supabase": {
+      "source": "supabase/agent-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/supabase/agent-skills.git",
+      "skillPath": "skills/supabase/SKILL.md",
+      "skillFolderHash": "9911179cac6d704329e20c6d27b94175121a4160",
+      "pluginName": "supabase",
+      "installedAt": "2026-06-29T08:25:08.774Z",
+      "updatedAt": "2026-06-29T08:25:08.774Z"
+    },
+    "supabase-postgres-best-practices": {
+      "source": "supabase/agent-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/supabase/agent-skills.git",
+      "skillPath": "skills/supabase-postgres-best-practices/SKILL.md",
+      "skillFolderHash": "6f1495c72c918e6f80c2f69df9005eacd5c57d7a",
+      "pluginName": "postgres-best-practices",
+      "installedAt": "2026-06-29T08:25:08.781Z",
+      "updatedAt": "2026-06-29T08:25:08.781Z"
+    }
+  },
+  "dismissed": {
+    "findSkillsPrompt": true
+  },
+  "lastSelectedAgents": [
+    "amp",
+    "antigravity",
+    "antigravity-cli",
+    "cline",
+    "codex",
+    "cursor",
+    "deepagents",
+    "gemini-cli",
+    "github-copilot",
+    "kimi-code-cli",
+    "opencode",
+    "warp",
+    "zed",
+    "claude-code"
+  ]
+}
