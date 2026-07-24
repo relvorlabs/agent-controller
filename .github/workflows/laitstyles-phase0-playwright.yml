@@ -1,0 +1,268 @@
+name: Laitstyles Phase 0 Playwright Runner
+
+on:
+  push:
+    branches:
+      - agent/laitstyles-phase0-playwright-runner
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  phase0-playwright:
+    name: Remote Playwright characterization
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Create isolated Playwright workspace
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/laitstyles-phase0/tests" "$RUNNER_TEMP/laitstyles-phase0/evidence"
+          cd "$RUNNER_TEMP/laitstyles-phase0"
+          npm init -y
+          npm install --save-dev @playwright/test@1.61.1
+          npx playwright install --with-deps chromium
+
+      - name: Discover public Laitstyles deployment
+        id: discover
+        shell: bash
+        run: |
+          cd "$RUNNER_TEMP/laitstyles-phase0"
+          cat > discover.mjs <<'EOF'
+          import fs from "node:fs";
+
+          const candidates = [
+            "https://laitstyle.vercel.app",
+            "https://laitstyles.vercel.app",
+            "https://laitstyle-app.vercel.app",
+            "https://laitstyles-app.vercel.app",
+            "https://laitstyle-store.vercel.app",
+            "https://laitstyles-store.vercel.app",
+            "https://laitstyle-git-main-relvorlabs.vercel.app",
+            "https://laitstyles-git-main-relvorlabs.vercel.app",
+            "https://laitstyle-git-main-surdmas-projects.vercel.app",
+            "https://laitstyles-git-main-surdmas-projects.vercel.app",
+            "https://laitstyle-git-agent-architecture-phase-0-baseline-relvorlabs.vercel.app",
+            "https://laitstyles-git-agent-architecture-phase-0-baseline-relvorlabs.vercel.app",
+            "https://laitstyle-git-agent-architecture-phase-0-baseline-surdmas-projects.vercel.app",
+            "https://laitstyles-git-agent-architecture-phase-0-baseline-surdmas-projects.vercel.app",
+            "https://laitstyle.netlify.app",
+            "https://laitstyles.netlify.app",
+            "https://laitstyle.onrender.com",
+            "https://laitstyles.onrender.com"
+          ];
+
+          const results = [];
+          let selected = null;
+
+          for (const url of candidates) {
+            try {
+              const response = await fetch(url, {
+                redirect: "follow",
+                signal: AbortSignal.timeout(15_000),
+                headers: { "user-agent": "Laitstyles-Phase0-Characterization/1.0" },
+              });
+              const body = await response.text();
+              const title = body.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]?.trim() ?? null;
+              const looksLikeLaitstyle = /laitstyle|one-of-one second-hand pieces from lagos/i.test(`${title ?? ""}\n${body.slice(0, 20000)}`);
+              const result = {
+                url,
+                status: response.status,
+                finalUrl: response.url,
+                title,
+                bytes: Buffer.byteLength(body),
+                looksLikeLaitstyle,
+              };
+              results.push(result);
+              if (!selected && response.ok && looksLikeLaitstyle) selected = response.url;
+            } catch (error) {
+              results.push({ url, error: error instanceof Error ? error.message : String(error) });
+            }
+          }
+
+          fs.writeFileSync("evidence/deployment-probe.json", JSON.stringify({ selected, results }, null, 2));
+          if (!selected) {
+            console.error("No public Laitstyles deployment was discovered.");
+            process.exit(2);
+          }
+
+          fs.appendFileSync(process.env.GITHUB_ENV, `LAITSTYLES_BASE_URL=${selected}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `base_url=${selected}\n`);
+          console.log(`Selected ${selected}`);
+          EOF
+          node discover.mjs
+
+      - name: Write Playwright characterization suite
+        if: always() && steps.discover.outcome == 'success'
+        shell: bash
+        run: |
+          cd "$RUNNER_TEMP/laitstyles-phase0"
+          cat > playwright.config.mjs <<'EOF'
+          import { defineConfig, devices } from "@playwright/test";
+
+          export default defineConfig({
+            testDir: "./tests",
+            timeout: 60_000,
+            expect: { timeout: 15_000 },
+            fullyParallel: false,
+            retries: 0,
+            workers: 1,
+            reporter: [
+              ["list"],
+              ["html", { outputFolder: "evidence/html-report", open: "never" }],
+              ["json", { outputFile: "evidence/results.json" }],
+              ["junit", { outputFile: "evidence/junit.xml" }],
+            ],
+            outputDir: "evidence/test-results",
+            use: {
+              baseURL: process.env.LAITSTYLES_BASE_URL,
+              trace: "on",
+              screenshot: "on",
+              video: "retain-on-failure",
+              actionTimeout: 15_000,
+              navigationTimeout: 30_000,
+            },
+            projects: [
+              {
+                name: "desktop-chromium",
+                use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 } },
+              },
+              {
+                name: "tablet-chromium",
+                use: { ...devices["Desktop Chrome"], viewport: { width: 768, height: 1024 } },
+              },
+              {
+                name: "mobile-chromium",
+                use: { ...devices["iPhone 13"], browserName: "chromium", viewport: { width: 375, height: 812 } },
+              },
+            ],
+          });
+          EOF
+
+          cat > tests/phase0.spec.mjs <<'EOF'
+          import fs from "node:fs";
+          import path from "node:path";
+          import { test, expect } from "@playwright/test";
+
+          const evidenceDir = path.resolve("evidence", "screenshots");
+          fs.mkdirSync(evidenceDir, { recursive: true });
+
+          const unexpectedErrors = (messages) => messages.filter((message) =>
+            !/favicon|Failed to load resource.*404|third-party cookie|hydration.*extension/i.test(message)
+          );
+
+          for (const theme of ["light", "dark"]) {
+            test(`homepage contract — ${theme}`, async ({ page }, testInfo) => {
+              const consoleErrors = [];
+              const pageErrors = [];
+              const failedRequests = [];
+
+              page.on("console", (message) => {
+                if (message.type() === "error") consoleErrors.push(message.text());
+              });
+              page.on("pageerror", (error) => pageErrors.push(error.message));
+              page.on("requestfailed", (request) => {
+                const failure = request.failure()?.errorText ?? "unknown";
+                failedRequests.push(`${request.method()} ${request.url()} — ${failure}`);
+              });
+
+              await page.emulateMedia({ colorScheme: theme });
+              await page.addInitScript((selectedTheme) => {
+                try { localStorage.setItem("theme", selectedTheme); } catch {}
+              }, theme);
+
+              const response = await page.goto("/", { waitUntil: "networkidle" });
+              expect(response, "homepage navigation should return a response").not.toBeNull();
+              expect(response.status(), "homepage should not return a server error").toBeLessThan(500);
+              await expect(page.locator("body")).toContainText(/Laitstyle|Shop|Collection|Product/i);
+
+              const screenshotPath = path.join(evidenceDir, `${testInfo.project.name}-${theme}-homepage.png`);
+              await page.screenshot({ path: screenshotPath, fullPage: true });
+
+              const links = await page.locator("a[href]").evaluateAll((nodes) =>
+                nodes.slice(0, 100).map((node) => ({
+                  text: (node.textContent ?? "").trim(),
+                  href: node.getAttribute("href") ?? "",
+                }))
+              );
+              fs.writeFileSync(
+                path.resolve("evidence", `${testInfo.project.name}-${theme}-links.json`),
+                JSON.stringify(links, null, 2),
+              );
+
+              expect(unexpectedErrors(pageErrors), `page errors: ${pageErrors.join("\n")}`).toEqual([]);
+              expect(unexpectedErrors(consoleErrors), `console errors: ${consoleErrors.join("\n")}`).toEqual([]);
+              expect(
+                failedRequests.filter((entry) => !/image|analytics|favicon/i.test(entry)),
+                `failed requests: ${failedRequests.join("\n")}`,
+              ).toEqual([]);
+            });
+          }
+
+          test("storefront navigation characterization", async ({ page }, testInfo) => {
+            await page.goto("/", { waitUntil: "networkidle" });
+            const target = page.locator('a[href^="/products"], a[href^="/collections"], a[href="/shop"]').first();
+            if (await target.count()) {
+              const href = await target.getAttribute("href");
+              await target.click();
+              await page.waitForLoadState("networkidle");
+              expect(new URL(page.url()).pathname).not.toBe("/");
+              await page.screenshot({
+                path: path.join(evidenceDir, `${testInfo.project.name}-navigation-${(href ?? "target").replace(/[^a-z0-9]+/gi, "-")}.png`),
+                fullPage: true,
+              });
+            } else {
+              test.info().annotations.push({ type: "characterization", description: "No product, collection, or shop link was present on the homepage." });
+            }
+          });
+          EOF
+
+      - name: Run Playwright characterization
+        if: always() && steps.discover.outcome == 'success'
+        id: playwright
+        shell: bash
+        run: |
+          cd "$RUNNER_TEMP/laitstyles-phase0"
+          set +e
+          npx playwright test
+          status=$?
+          echo "$status" > evidence/playwright-exit-code.txt
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - name: Write evidence manifest
+        if: always()
+        shell: bash
+        run: |
+          cd "$RUNNER_TEMP/laitstyles-phase0"
+          {
+            echo "# Laitstyles Phase 0 Playwright Evidence"
+            echo
+            echo "- Runner repository: relvorlabs/agent-controller"
+            echo "- Runner commit: $GITHUB_SHA"
+            echo "- Workflow run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo "- Target URL: ${LAITSTYLES_BASE_URL:-not discovered}"
+            echo "- Playwright version: 1.61.1"
+            echo "- Browser: Chromium"
+            echo "- Projects: desktop 1280x800, tablet 768x1024, mobile 375x812"
+            echo "- Themes: light and dark"
+            echo "- Playwright exit code: ${{ steps.playwright.outputs.exit_code || 'not-run' }}"
+            echo
+            echo "This external public runner does not checkout or expose the private Laitstyles repository."
+          } > evidence/README.md
+
+      - name: Upload Phase 0 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: laitstyles-phase0-playwright-${{ github.run_id }}
+          path: ${{ runner.temp }}/laitstyles-phase0/evidence
+          if-no-files-found: error
+          retention-days: 30
