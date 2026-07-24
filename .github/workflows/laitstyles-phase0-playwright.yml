@@ -209,21 +209,35 @@ jobs:
             });
           }
 
-          test("storefront navigation characterization", async ({ page }, testInfo) => {
+          test("storefront product interaction characterization", async ({ page }, testInfo) => {
             await page.goto("/", { waitUntil: "networkidle" });
-            const target = page.locator('a[href^="/products"], a[href^="/collections"], a[href="/shop"]').first();
-            if (await target.count()) {
-              const href = await target.getAttribute("href");
-              await target.click();
-              await page.waitForLoadState("networkidle");
-              expect(new URL(page.url()).pathname).not.toBe("/");
-              await page.screenshot({
-                path: path.join(evidenceDir, `${testInfo.project.name}-navigation-${(href ?? "target").replace(/[^a-z0-9]+/gi, "-")}.png`),
-                fullPage: true,
-              });
-            } else {
-              test.info().annotations.push({ type: "characterization", description: "No product, collection, or shop link was present on the homepage." });
-            }
+            const target = page.locator('a[href^="/products/"]').first();
+            const href = await target.getAttribute("href");
+            expect(href, "a product link should be present on the homepage").toBeTruthy();
+
+            const beforeUrl = page.url();
+            await target.click();
+            await page.waitForLoadState("networkidle").catch(() => {});
+
+            const afterUrl = page.url();
+            const productHeading = page.getByRole("heading", { level: 1 }).first();
+            const hasProductView = await productHeading.isVisible().catch(() => false);
+            const interactionMode = afterUrl !== beforeUrl ? "navigation" : hasProductView ? "in-place-product-view" : "no-observable-result";
+
+            fs.writeFileSync(
+              path.resolve("evidence", `${testInfo.project.name}-product-interaction.json`),
+              JSON.stringify({ href, beforeUrl, afterUrl, interactionMode }, null, 2),
+            );
+
+            expect(
+              interactionMode,
+              "clicking a product should navigate or render an in-place product view",
+            ).not.toBe("no-observable-result");
+
+            await page.screenshot({
+              path: path.join(evidenceDir, `${testInfo.project.name}-product-interaction.png`),
+              fullPage: true,
+            });
           });
           EOF
 
