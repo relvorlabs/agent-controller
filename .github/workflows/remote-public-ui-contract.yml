@@ -1,0 +1,192 @@
+name: Remote Public UI Contract
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/remote-public-ui-contract.yml
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: Public deployment origin to test
+        required: true
+        default: https://laitstyles.vercel.app
+        type: string
+      artifact_label:
+        description: Evidence label
+        required: false
+        default: laitstyles
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: remote-public-ui-${{ inputs.artifact_label || 'laitstyles-pr' }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  browser:
+    name: Remote public Playwright characterization
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      TARGET_URL: ${{ inputs.target_url || 'https://laitstyles.vercel.app' }}
+      ARTIFACT_LABEL: ${{ inputs.artifact_label || 'laitstyles-pr' }}
+      PLAYWRIGHT_VERSION: 1.61.1
+
+    steps:
+      - name: Validate public target
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$TARGET_URL" in
+            https://*) ;;
+            *)
+              echo "target_url must be a public HTTPS origin"
+              exit 1
+              ;;
+          esac
+          curl --fail --silent --show-error --location --max-time 30 "$TARGET_URL" >/dev/null
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Create isolated Playwright workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          workspace="$RUNNER_TEMP/remote-public-ui"
+          mkdir -p "$workspace/tests" "$workspace/evidence"
+          cd "$workspace"
+          npm init -y
+          npm install --save-dev "@playwright/test@$PLAYWRIGHT_VERSION"
+          npx playwright install --with-deps chromium
+
+      - name: Write remote browser contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          workspace="$RUNNER_TEMP/remote-public-ui"
+
+          cat > "$workspace/playwright.config.mjs" <<'CONFIG'
+          import { defineConfig, devices } from "@playwright/test";
+
+          export default defineConfig({
+            testDir: "./tests",
+            timeout: 60_000,
+            expect: { timeout: 12_000 },
+            fullyParallel: false,
+            retries: 1,
+            reporter: [
+              ["line"],
+              ["html", { outputFolder: "evidence/playwright-report", open: "never" }],
+              ["json", { outputFile: "evidence/results.json" }],
+              ["junit", { outputFile: "evidence/junit.xml" }],
+            ],
+            outputDir: "evidence/test-results",
+            use: {
+              trace: "retain-on-failure",
+              screenshot: "only-on-failure",
+              video: "retain-on-failure",
+            },
+            projects: [
+              {
+                name: "desktop-chromium",
+                use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 } },
+              },
+              {
+                name: "tablet-chromium",
+                use: { ...devices["Desktop Chrome"], viewport: { width: 768, height: 1024 } },
+              },
+              {
+                name: "mobile-chromium",
+                use: {
+                  ...devices["iPhone 13"],
+                  browserName: "chromium",
+                  viewport: { width: 375, height: 812 },
+                },
+              },
+            ],
+          });
+          CONFIG
+
+          cat > "$workspace/tests/public-ui.spec.mjs" <<'TEST'
+          import { expect, test } from "@playwright/test";
+
+          const target = process.env.TARGET_URL;
+          const routes = ["/", "/products"];
+
+          for (const route of routes) {
+            test(`${route} loads without browser or server errors`, async ({ page }, testInfo) => {
+              const failures = [];
+
+              page.on("pageerror", (error) => failures.push(`pageerror: ${error.message}`));
+              page.on("console", (message) => {
+                if (message.type() === "error") failures.push(`console: ${message.text()}`);
+              });
+              page.on("response", (response) => {
+                if (response.status() >= 500) {
+                  failures.push(`http ${response.status()}: ${response.url()}`);
+                }
+              });
+
+              const url = new URL(route, target).toString();
+              const response = await page.goto(url, { waitUntil: "domcontentloaded" });
+              expect(response, `No document response for ${url}`).not.toBeNull();
+              expect(response.status(), `${url} returned ${response.status()}`).toBeLessThan(400);
+              await expect(page.locator("body")).toBeVisible();
+
+              const hasHorizontalOverflow = await page.evaluate(
+                () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 2,
+              );
+              expect(hasHorizontalOverflow, `${url} has horizontal viewport overflow`).toBe(false);
+
+              await page.screenshot({
+                path: `evidence/${testInfo.project.name}-${route === "/" ? "home" : "products"}.png`,
+                fullPage: true,
+              });
+
+              expect(failures).toEqual([]);
+            });
+          }
+          TEST
+
+      - name: Run remote Playwright contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/remote-public-ui"
+          npx playwright test --config playwright.config.mjs
+
+      - name: Write evidence manifest
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          workspace="$RUNNER_TEMP/remote-public-ui"
+          mkdir -p "$workspace/evidence"
+          cat > "$workspace/evidence/manifest.json" <<EOF
+          {
+            "schemaVersion": 1,
+            "kind": "remote-public-ui-contract",
+            "targetUrl": "$TARGET_URL",
+            "artifactLabel": "$ARTIFACT_LABEL",
+            "playwrightVersion": "$PLAYWRIGHT_VERSION",
+            "repository": "$GITHUB_REPOSITORY",
+            "workflow": "$GITHUB_WORKFLOW",
+            "runId": "$GITHUB_RUN_ID",
+            "runAttempt": "$GITHUB_RUN_ATTEMPT",
+            "generatedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+
+      - name: Upload public UI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: remote-public-ui-${{ inputs.artifact_label || 'laitstyles-pr' }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/remote-public-ui/evidence/
+          if-no-files-found: error
+          retention-days: 30
