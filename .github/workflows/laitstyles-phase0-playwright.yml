@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - agent/laitstyles-phase0-playwright-runner
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
