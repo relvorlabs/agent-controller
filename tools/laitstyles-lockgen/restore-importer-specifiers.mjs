@@ -10,7 +10,8 @@ function escapeRegExp(value) {
 
 const expected = { ...manifest.dependencies, ...manifest.devDependencies };
 for (const [name, specifier] of Object.entries(expected)) {
-  const pattern = new RegExp(`(      ${escapeRegExp(name)}:\\n        specifier: )[^\\n]+`);
+  const yamlKey = name.startsWith("@") ? `'${escapeRegExp(name)}'` : escapeRegExp(name);
+  const pattern = new RegExp(`(      ${yamlKey}:\\n        specifier: )[^\\n]+`);
   if (!pattern.test(lock)) throw new Error(`Importer entry not found for ${name}.`);
   lock = lock.replace(pattern, `$1${specifier}`);
 }
