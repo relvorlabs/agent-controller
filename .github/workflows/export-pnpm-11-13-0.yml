@@ -36,7 +36,7 @@ jobs:
           cp package-pinned.json package.json
           pnpm install --lockfile-only --ignore-scripts --no-frozen-lockfile
           mv package-ranges.json package.json
-          pnpm install --lockfile-only --ignore-scripts --offline --no-frozen-lockfile
+          node restore-importer-specifiers.mjs
 
       - name: Prove zero unrelated lockfile drift
         working-directory: tools/laitstyles-lockgen
