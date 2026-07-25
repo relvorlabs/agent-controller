@@ -1,0 +1,51 @@
+name: Laitstyles Lockfile Generator
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "tools/laitstyles-lockfile/package.json"
+      - ".github/workflows/laitstyles-lockfile-generator.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out generator branch
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm 11.13.0
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.13.0
+
+      - name: Set up Node.js 25
+        uses: actions/setup-node@v4
+        with:
+          node-version: "25"
+          cache: pnpm
+          cache-dependency-path: tools/laitstyles-lockfile/package.json
+
+      - name: Generate lockfile without lifecycle scripts
+        working-directory: tools/laitstyles-lockfile
+        run: pnpm install --lockfile-only --ignore-scripts
+
+      - name: Verify Zustand is locked
+        working-directory: tools/laitstyles-lockfile
+        run: |
+          grep -q "zustand:" pnpm-lock.yaml
+          grep -q "zustand@5.0.14" pnpm-lock.yaml
+
+      - name: Upload generated lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: laitstyles-pnpm-lock
+          path: tools/laitstyles-lockfile/pnpm-lock.yaml
+          if-no-files-found: error
+          retention-days: 3
