@@ -1,0 +1,40 @@
+name: Export pnpm 11.13.0
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/export-pnpm-11-13-0.yml
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm 11.13.0
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.13.0
+          run_install: false
+
+      - name: Package portable pnpm installation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(pnpm --version)" = "11.13.0"
+          mkdir -p pnpm-portable
+          cp -a "$PNPM_HOME/." pnpm-portable/
+          printf '%s\n' "$(command -v pnpm)" > pnpm-portable/installed-path.txt
+          find pnpm-portable -maxdepth 3 -type f -print | sort > pnpm-portable/manifest.txt
+
+      - name: Upload pnpm artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pnpm-11.13.0-portable
+          path: pnpm-portable/
+          if-no-files-found: error
+          retention-days: 1
