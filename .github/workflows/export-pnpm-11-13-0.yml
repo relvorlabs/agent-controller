@@ -27,9 +27,16 @@ jobs:
         with:
           node-version: '25'
 
-      - name: Generate the Laitstyles lockfile
+      - name: Generate from the existing importer resolutions
         working-directory: tools/laitstyles-lockgen
-        run: pnpm install --lockfile-only --ignore-scripts --no-frozen-lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp package.json package-ranges.json
+          cp package-pinned.json package.json
+          pnpm install --lockfile-only --ignore-scripts --no-frozen-lockfile
+          mv package-ranges.json package.json
+          pnpm install --lockfile-only --ignore-scripts --offline --no-frozen-lockfile
 
       - name: Prove zero unrelated lockfile drift
         working-directory: tools/laitstyles-lockgen
