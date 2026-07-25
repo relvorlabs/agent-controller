@@ -21,20 +21,21 @@ jobs:
           version: 11.13.0
           run_install: false
 
-      - name: Package portable pnpm installation
+      - name: Package complete pnpm installation
         shell: bash
         run: |
           set -euo pipefail
           test "$(pnpm --version)" = "11.13.0"
           mkdir -p pnpm-portable
-          cp -a "$PNPM_HOME/." pnpm-portable/
-          printf '%s\n' "$(command -v pnpm)" > pnpm-portable/installed-path.txt
-          find pnpm-portable -maxdepth 3 -type f -print | sort > pnpm-portable/manifest.txt
+          cp -a /home/runner/setup-pnpm pnpm-portable/setup-pnpm
+          printf '%s\n' '/home/runner/setup-pnpm/node_modules/.bin/pnpm' > pnpm-portable/installed-path.txt
+          test -f pnpm-portable/setup-pnpm/node_modules/.pnpm/pnpm@11.13.0/node_modules/pnpm/bin/pnpm.mjs
+          du -sh pnpm-portable/setup-pnpm > pnpm-portable/size.txt
 
       - name: Upload pnpm artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pnpm-11.13.0-portable
+          name: pnpm-11.13.0-complete
           path: pnpm-portable/
           if-no-files-found: error
           retention-days: 1
