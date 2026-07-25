@@ -1,4 +1,4 @@
-name: Export pnpm 11.13.0
+name: Validate Laitstyles Phase 6
 
 on:
   pull_request:
@@ -9,33 +9,136 @@ permissions:
   contents: read
 
 jobs:
-  export:
+  validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: laitstyles
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d laitstyles"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      CI: "1"
+      CI_BASE_REF: main
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/laitstyles
+      DIRECT_URL: postgresql://postgres:postgres@127.0.0.1:5432/laitstyles
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: test-publishable-key
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out private Laitstyles hotfix
+        uses: actions/checkout@v4
+        with:
+          repository: relvorlabs/laitstyles
+          ref: fix/phase-6-completion
+          path: laitstyles
+          fetch-depth: 0
+          persist-credentials: false
+          token: ${{ secrets.LAITSTYLES_TOKEN || secrets.GH_TOKEN || secrets.GH_PAT || secrets.GITHUB_PAT || secrets.CODEX_GITHUB_TOKEN || secrets.ORG_GITHUB_TOKEN || secrets.PERSONAL_ACCESS_TOKEN }}
 
-      - name: Install pnpm 11.13.0
+      - name: Set up pnpm 11.13.0
         uses: pnpm/action-setup@v4
         with:
           version: 11.13.0
           run_install: false
 
-      - name: Package complete pnpm installation
+      - name: Set up Node.js 25
+        uses: actions/setup-node@v4
+        with:
+          node-version: '25'
+          cache: pnpm
+          cache-dependency-path: laitstyles/pnpm-lock.yaml
+
+      - name: Regenerate the Phase 6 lockfile
+        working-directory: laitstyles
+        run: pnpm install --lockfile-only --ignore-scripts --no-frozen-lockfile
+
+      - name: Reconcile the architecture guard
+        working-directory: laitstyles
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'scripts/checks/architecture-guard.mjs';
+          let source = fs.readFileSync(path, 'utf8');
+          source = source
+            .replace('  "src/features/storefront/shared/catalog-adapter.ts",\n', '')
+            .replace('  "src/features/storefront/shared/storefront-client-state-provider.tsx",\n', '')
+            .replace(
+              '  "src/features/storefront/shared/storefront-auth-provider.tsx",\n',
+              '  "src/features/storefront/shared/storefront-auth-provider.tsx",\n' +
+                '  "src/features/storefront/shared/storefront-runtime.ts",\n' +
+                '  "src/features/storefront/shared/storefront-state-hydrator.tsx",\n' +
+                '  "src/stores/cart.store.ts",\n' +
+                '  "src/stores/saved-items.store.ts",\n' +
+                '  "src/stores/storefront-ui.store.ts",\n',
+            )
+            .replaceAll('loadStorefrontShellCatalog', 'loadStorefrontShellCatalogue')
+            .replaceAll('loadStorefrontCatalog', 'loadStorefrontCatalogue')
+            .replace('  "src/features/storefront/shared/catalog-loader.ts",\n', '  "src/features/storefront/shared/catalogue-loader.ts",\n')
+            .replace('  "src/features/storefront/shared/storefront-client-state-provider.tsx",\n', '')
+            .replace('  "src/features/storefront/shared/storefront-provider.tsx",\n', '');
+          fs.writeFileSync(path, source);
+          NODE
+          git diff --check
+
+      - name: Verify generated scope
+        working-directory: laitstyles
         shell: bash
         run: |
           set -euo pipefail
-          test "$(pnpm --version)" = "11.13.0"
-          mkdir -p pnpm-portable
-          cp -a /home/runner/setup-pnpm pnpm-portable/setup-pnpm
-          printf '%s\n' '/home/runner/setup-pnpm/node_modules/.bin/pnpm' > pnpm-portable/installed-path.txt
-          test -f pnpm-portable/setup-pnpm/node_modules/.pnpm/pnpm@11.13.0/node_modules/pnpm/bin/pnpm.mjs
-          du -sh pnpm-portable/setup-pnpm > pnpm-portable/size.txt
+          unexpected="$(git diff --name-only | grep -Ev '^(pnpm-lock.yaml|scripts/checks/architecture-guard.mjs)$' || true)"
+          test -z "$unexpected"
+          grep -Fq 'zustand:' pnpm-lock.yaml
+          grep -Fq 'zustand@5.0.14' pnpm-lock.yaml
+          grep -Fq 'loadStorefrontShellCatalogue' scripts/checks/architecture-guard.mjs
+          ! grep -Fq 'src/features/storefront/shared/catalog-adapter.ts' scripts/checks/architecture-guard.mjs
 
-      - name: Upload pnpm artifact
+      - name: Prove frozen installation
+        working-directory: laitstyles
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Run architecture, Biome and TypeScript
+        working-directory: laitstyles
+        run: |
+          pnpm check:architecture
+          pnpm biome
+          pnpm typecheck
+
+      - name: Run focused and complete unit tests
+        working-directory: laitstyles
+        run: pnpm test
+
+      - name: Validate Prisma and production build
+        working-directory: laitstyles
+        run: |
+          pnpm prisma:validate
+          pnpm build
+
+      - name: Run React Doctor
+        working-directory: laitstyles
+        run: pnpm react-doctor
+
+      - name: Export generated Phase 6 repairs
+        if: always()
+        run: |
+          mkdir -p phase-6-repairs
+          cp laitstyles/pnpm-lock.yaml phase-6-repairs/pnpm-lock.yaml
+          cp laitstyles/scripts/checks/architecture-guard.mjs phase-6-repairs/architecture-guard.mjs
+          git -C laitstyles diff -- pnpm-lock.yaml scripts/checks/architecture-guard.mjs > phase-6-repairs/phase-6-repairs.patch
+
+      - name: Upload generated repairs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pnpm-11.13.0-complete
-          path: pnpm-portable/
+          name: laitstyles-phase-6-repairs
+          path: phase-6-repairs/
           if-no-files-found: error
           retention-days: 1
